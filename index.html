@@ -279,12 +279,14 @@ var D={s:{school:'UPTD SPF SD Negeri Lanas 1',addr:'Kecamatan Botolinggo, Kabupa
 try{var r=localStorage.getItem(K);if(r)D=JSON.parse(r)}catch(e){}
 function save(){try{localStorage.setItem(K,JSON.stringify(D))}catch(e){toast('Penyimpanan peramban tidak tersedia')}}
 /* ===== Integrasi SIPAS: nomor surat undangan & nomor notulen diambil dari urutan Surat Keluar SIPAS ===== */
-var SPD='sipas_lanas1_db',SPI='sipas_lanas1_inbox',SP={K:'000.1.5',
-db:function(){try{var x=JSON.parse(localStorage.getItem(SPD));return x&&x.keluar&&x.set?x:null}catch(e){return null}},
+var SPD='sipas_lanas1_db',SPI='sipas_lanas1_inbox',SPR='notula_sipas_snap',SP={K:'000.1.5',
+rem:function(){return!!(D.s.sipUrl&&D.s.sipTok)},
+db:function(){if(SP.rem()){try{var z=JSON.parse(localStorage.getItem(SPR));if(z&&z.keluar&&z.set)return z}catch(e){}}try{var x=JSON.parse(localStorage.getItem(SPD));return x&&x.keluar&&x.set?x:null}catch(e){return null}},
 ok:function(){return!!SP.db()},
 rec:function(id){return id?D.m.filter(function(x){return x.id==id})[0]:null},
 on:function(id){if(!SP.ok())return false;var m=SP.rec(id);return!id||!m||!!(m.sp||m.spn)},
-ops:function(){try{var a=JSON.parse(localStorage.getItem(SPI)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}},
+lops:function(){try{var a=JSON.parse(localStorage.getItem(SPI)||'[]');return Array.isArray(a)?a:[]}catch(e){return[]}},
+ops:function(){var a=SP.lops();if(SP.rem()){try{var z=JSON.parse(localStorage.getItem(SPR));((z&&z.ops)||[]).forEach(function(o){if(!a.some(function(x){return x.ref==o.ref}))a=a.concat([o])})}catch(e){}}return a},
 yr:function(t){return t?new Date(t).getFullYear():''},
 sd:function(d){var t=today();return d&&d<t?d:t},
 fmt:function(n,k,t){var s=SP.db().set,d=new Date(t||today());return(s.fmt||'{kode}/{no}/{unit}/{thn}').replace('{no}',String(n).padStart(3,'0')).replace('{kode}',k||'000').replace('{kls}',k||'000').replace('{unit}',s.unit||'-').replace('{bln}',d.getMonth()+1).replace('{thn}',d.getFullYear())},
@@ -293,24 +295,47 @@ alloc:function(sd,d){var y1=SP.yr(sd),y2=SP.yr(d),a=SP.next(y1);return{sur:a,ntl
 fill:function(m){var sd=m.surtgl||m.date,al=SP.alloc(sd,m.date);m.surno=al.sur;m.urut=al.ntl;if(m.kode){m.sur=SP.fmt(al.sur,m.kode,sd);m.no=SP.fmt(al.ntl,m.kode,m.date)}},
 push:function(m){var db=SP.db();if(!db)return;var ds=fd(m.date).replace(/^[^,]+,\s*/,''),ag=(m.agenda||'').split('\n').filter(Boolean).join('; ');
 var L=[{r:'sur',no:m.surno,tgl:m.surtgl||m.date,tj:'Bapak/Ibu Guru dan Tenaga Kependidikan',p:'Undangan '+m.type,i:'Undangan '+m.type+' pada '+ds+(m.place?' di '+m.place:'')+(ag?'. Agenda: '+ag:'')},
-{r:'ntl',no:m.urut,tgl:m.date,tj:'Arsip dan peserta rapat',p:'Notulen '+m.type+' tanggal '+ds,i:'Notulen '+m.type+' pada '+ds+(ag?'. Agenda: '+ag:'')}],ops=SP.ops();
+{r:'ntl',no:m.urut,tgl:m.date,tj:'Arsip dan peserta rapat',p:'Notulen '+m.type+' tanggal '+ds,i:'Notulen '+m.type+' pada '+ds+(ag?'. Agenda: '+ag:'')}],ops=SP.lops();
 L.forEach(function(x){var ref='ntl:'+m.id+':'+x.r;ops=ops.filter(function(o){return o.ref!=ref});
 if(m.spseen&&m.spseen[x.r]&&!db.keluar.some(function(k){return k.ref==ref}))return;
 ops.push({oid:ref+':'+Date.now(),ref:ref,no:+x.no,tgl:x.tgl,kode:m.kode,tujuan:x.tj,perihal:x.p,isi:x.i,src:'Notula Digital'})});
-try{localStorage.setItem(SPI,JSON.stringify(ops))}catch(e){toast('Gagal mengirim ke SIPAS: penyimpanan peramban penuh.')}},
+try{localStorage.setItem(SPI,JSON.stringify(ops))}catch(e){toast('Gagal mengirim ke SIPAS: penyimpanan peramban penuh.')}SP.flush()},
 rf:function(){var db=SP.db(),ch=0,dirty=0;if(!db)return 0;var pend=SP.ops().map(function(o){return o.ref});
 D.m.forEach(function(m){if(!m.sp)return;[['sur','sur','surno'],['ntl','no','urut']].forEach(function(t){var ref='ntl:'+m.id+':'+t[0];if(pend.indexOf(ref)>-1)return;var r=db.keluar.filter(function(x){return x.ref==ref})[0];if(!r)return;
 m.spseen=m.spseen||{};if(!m.spseen[t[0]]){m.spseen[t[0]]=1;dirty=1}
 if(m[t[1]]!==r.nomor||+m[t[2]]!==+r.no){m[t[1]]=r.nomor;m[t[2]]=r.no;ch++;dirty=1}})});
 if(dirty)save();return ch}};
+SP.err='';
+SP.url=function(x){var u=D.s.sipUrl;return u+(u.indexOf('?')>-1?'&':'?')+'token='+encodeURIComponent(D.s.sipTok)+x};
+SP.jsonp=function(u){return new Promise(function(ok,no){var c='cb'+Date.now(),e=document.createElement('script'),t;function end(){clearTimeout(t);delete window[c];e.remove()}window[c]=function(j){end();ok(j)};e.onerror=function(){end();no(new Error('Skrip SIPAS tidak dapat dimuat. Pastikan akses deployment "Siapa saja" dan URL /exec benar.'))};t=setTimeout(function(){end();no(new Error('Waktu habis menunggu Google.'))},20000);e.src=u+'&callback='+c;document.head.appendChild(e)})};
+SP.pull=function(){if(!SP.rem())return Promise.resolve(0);var u=SP.url('&nomor=1');
+return fetch(u).then(function(r){return r.json()}).catch(function(){return SP.jsonp(u)}).then(function(j){
+if(!j||!j.ok)throw new Error((j&&j.error)||'Token Notula tidak cocok atau skrip SIPAS belum diperbarui');
+j.at=Date.now();try{localStorage.setItem(SPR,JSON.stringify(j))}catch(e){}
+SP.err='';return j})};
+SP.flush=function(){if(!SP.rem())return Promise.resolve();var q=SP.lops();
+if(!q.length)return SP.pull().catch(function(e){SP.err=String(e&&e.message||e)});
+var u=D.s.sipUrl,H={'Content-Type':'text/plain;charset=utf-8'},body=JSON.stringify({token:D.s.sipTok,action:'inbox',ops:q});
+return fetch(u,{method:'POST',headers:H,body:body}).then(function(r){return r.json()}).then(function(j){
+if(!j||!j.ok)throw new Error('Ditolak: '+((j&&j.error)||'token Notula tidak cocok'));
+var d={};q.forEach(function(o){d[o.oid]=1});try{localStorage.setItem(SPI,JSON.stringify(SP.lops().filter(function(o){return!d[o.oid]})))}catch(e){}})
+.catch(function(e){if(e&&/^Ditolak/.test(e.message||''))throw e;return fetch(u,{method:'POST',mode:'no-cors',headers:H,body:body})})
+.then(function(){return SP.pull()}).then(function(j){var h={};((j&&j.ops)||[]).forEach(function(o){h[o.oid]=1});var l=SP.lops(),k=l.filter(function(o){return!h[o.oid]});if(k.length!=l.length)try{localStorage.setItem(SPI,JSON.stringify(k))}catch(e){}})
+.catch(function(e){SP.err=String(e&&e.message||e)})};
+function spp(){SP.flush().then(spr)}
+
 function spn(){var db=SP.db(),m=SP.rec(E),k=$('kode').value.trim(),d=$('date').value||today(),sd=$('surtgl')?$('surtgl').value||d:d,u,n;
 if(m&&m.sp){u=+m.surno;n=+m.urut}else{var al=SP.alloc(sd,d);u=al.sur;n=al.ntl}
 $('urut').value=n;$('surno').value=u;if(k){$('no').value=SP.fmt(n,k,d);$('sur').value=SP.fmt(u,k,sd)}}
 function dc(){var m=SP.rec(E),s=$('surtgl');if(s&&!(m&&m.sp))s.value=SP.sd($('date').value);if(!E)$('urut').value='';if(!E||SP.on(E))gn()}
 function spr(){if(!SP.rf())return;if(V!='form')return go(V);var m=SP.rec(E);if(m){['no','sur','urut','surno'].forEach(function(i){if($(i))$(i).value=m[i]||''})}}
-function spc(){var db=SP.db(),c=db?db.keluar.filter(function(x){return x.src=='Notula Digital'}).length:0,p=SP.ops().length;
-return'<div class="c"><h3>Integrasi SIPAS</h3>'+(db?'<p class="ok" style="margin-top:0"><b>Tersambung.</b> Nomor surat undangan dan nomor notulen diambil dari urutan Surat Keluar SIPAS ('+db.keluar.length+' surat keluar terbaca, '+c+' berasal dari Notula).</p>':'<p class="warn" style="margin-top:0"><b>SIPAS tidak terdeteksi.</b> Aplikasi SIPAS harus pernah dibuka pada alamat (domain) yang sama dengan aplikasi ini. Selama belum terdeteksi, nomor diisi dengan cara lama.</p>')+'<p class="mu">'+(p?p+' pencatatan menunggu SIPAS dibuka. ':'')+'Notulen yang dibuat sebelum integrasi tidak diubah nomornya.</p><button class="b g2" onclick="spr();go(\'set\')">Segarkan nomor dari SIPAS</button></div>'}
-window.addEventListener('focus',spr);document.addEventListener('visibilitychange',function(){if(!document.hidden)spr()});window.addEventListener('storage',function(e){if(e.key==SPD||e.key==SPI)spr()});
+function spc(){var db=SP.db(),c=db?db.keluar.filter(function(x){return x.src=='Notula Digital'}).length:0,p=SP.ops().length,a=can('admin'),r=SP.rem(),z=null;try{z=JSON.parse(localStorage.getItem(SPR))}catch(e){}
+var st=db?'<p class="ok" style="margin-top:0"><b>Tersambung.</b> '+(r&&z&&z.at?'Lewat Google Sheets, diperbarui '+new Date(z.at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+'. ':'Pada perangkat ini. ')+'Nomor surat undangan dan nomor notulen diambil dari urutan Surat Keluar SIPAS ('+db.keluar.length+' surat keluar terbaca, '+c+' berasal dari Notula).</p>':'<p class="warn" style="margin-top:0"><b>SIPAS tidak terdeteksi.</b> Isi URL dan token di bawah agar tersambung lintas perangkat, atau buka SIPAS di peramban yang sama.</p>';
+return'<div class="c"><h3>Integrasi SIPAS</h3>'+st+(SP.err?'<p class="warn">Gagal terhubung: '+esc(SP.err)+'</p>':'')+'<p class="mu">'+(p?p+' pencatatan menunggu diproses SIPAS. ':'')+'Notulen yang dibuat sebelum integrasi tidak diubah nomornya.</p><label>URL aplikasi web SIPAS (berakhiran /exec)</label><input id="sp1" placeholder="https://script.google.com/macros/s/.../exec" value="'+esc(D.s.sipUrl)+'"><label>Token Notula (konstanta TOKEN_NTL di skrip SIPAS)</label><input id="sp2" autocomplete="off" value="'+esc(D.s.sipTok)+'"><button class="b" '+(a?'':'disabled')+' onclick="sps()">Simpan dan uji koneksi</button><button class="b g2" onclick="SP.flush().then(function(){spr();go(\'set\')})">Segarkan nomor dari SIPAS</button></div>'}
+function sps(){var u=$('sp1').value.trim(),t=$('sp2').value.trim();if(u&&!/^https:\/\/script\.google\.com\/macros\/s\/[^\s]+\/exec$/.test(u))return toast('URL harus diawali https://script.google.com/macros/s/ dan berakhiran /exec');D.s.sipUrl=u;D.s.sipTok=t;save();SP.err='';try{localStorage.removeItem(SPR)}catch(e){}
+SP.flush().then(function(){toast(SP.err?'Gagal: '+SP.err:(u&&t?'Berhasil: tersambung ke SIPAS lewat Google Sheets.':'Sambungan lintas perangkat dimatikan.'));spr();go('set')})}
+
+window.addEventListener('focus',function(){spr();spp()});document.addEventListener('visibilitychange',function(){if(!document.hidden){spr();spp()}});setInterval(spp,60000);window.addEventListener('storage',function(e){if(e.key==SPD||e.key==SPI)spr()});
 
 function $(i){return document.getElementById(i)}function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function toast(t){var e=$('toast');e.className=/^(Berhasil|Notulen tersimpan|Pengaturan tersimpan|Draf disusun)/.test(t)?'ok':'';e.textContent=t;void e.offsetWidth;e.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){e.classList.remove('on')},Math.min(10000,3500+t.length*50))}
@@ -452,5 +477,5 @@ shw(kop()+'<h2>REKAPITULASI RAPAT TAHUN '+y+'</h2><br><table class="bt"><tr><th>
 function shw(h,x){var d=$('doc');d.innerHTML='<div class="ov" id="ovl" role="dialog" aria-modal="true" aria-label="Pratinjau dokumen"><div class="bar" style="max-width:210mm;margin:0 auto 8px;text-align:right"><button class="b g2" onclick="window.print()">Cetak / simpan PDF</button><button class="b o" onclick="$(\'doc\').style.display=\'none\';$(\'doc\').innerHTML=\'\'">Tutup</button></div><div class="paper">'+h+'</div><div class="paper hist">'+x+'</div></div>';d.style.display='block'}
 try{var tt=localStorage.getItem(K+'_tema');if(tt)document.documentElement.setAttribute('data-theme',tt)}catch(e){}
 document.addEventListener('keydown',function(e){var d=$('doc');if(e.key=='Escape'&&d.style.display=='block'){d.style.display='none';d.innerHTML=''}});
-SP.rf();go('dash');
+SP.rf();go('dash');spp();
 </script></body></html>
